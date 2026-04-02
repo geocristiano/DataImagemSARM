@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Consulta de Imagem ESRI</title>
+  <style>
+    body {
+      font-family: Arial;
+      background: #f4f4f4;
+      text-align: center;
+      padding: 40px;
+    }
+    input {
+      padding: 10px;
+      margin: 5px;
+      width: 200px;
+    }
+    button {
+      padding: 10px 20px;
+      background: #0079c1;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    .resultado {
+      margin-top: 20px;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Consulta de Data de Imagem (ESRI)</h2>
+
+<input type="text" id="lon" placeholder="Longitude">
+<br>
+<input type="text" id="lat" placeholder="Latitude">
+<br><br>
+
+<button onclick="buscar()">Pesquisar</button>
+
+<div class="resultado" id="resultado"></div>
+
+<script>
+const IDENTIFY_URL = "https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/identify";
+const QUERY_URL = "https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/4/query";
+
+function parseDate(attr) {
+  if (attr.SRC_DATE2) return attr.SRC_DATE2;
+  if (attr.DATE) return attr.DATE.toString();
+  return "Sem data";
+}
+
+async function identify(lon, lat) {
+  const url = `${IDENTIFY_URL}?f=json&geometry=${lon},${lat}&geometryType=esriGeometryPoint&sr=4326&mapExtent=${lon-0.01},${lat-0.01},${lon+0.01},${lat+0.01}&imageDisplay=800,600,96&tolerance=2`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (!data.results || data.results.length === 0) return null;
+
+  const attr = data.results[0].attributes;
+
+  return {
+    date: parseDate(attr),
+    source: attr.SOURCE || attr.SRC_DESC || attr.SOURCE_INFO
+  };
+}
+
+async function query(lon, lat) {
+  const url = `${QUERY_URL}?f=json&geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (!data.features) return null;
+
+  let best = null;
+
+  data.features.forEach(f => {
+    const attr = f.attributes;
+    if (attr.SRC_RES) {
+      if (!best || attr.DATE > best.DATE) {
+        best = attr;
+      }
+    }
+  });
+
+  return best ? best.SRC_RES : null;
+}
+
+async function buscar() {
+  const lon = document.getElementById("lon").value;
+  const lat = document.getElementById("lat").value;
+
+  document.getElementById("resultado").innerHTML = "Carregando...";
+
+  try {
+    const img = await identify(lon, lat);
+    const res = await query(lon, lat);
+
+    document.getElementById("resultado").innerHTML = `
+      <b>Data:</b> ${img?.date || "N/A"} <br>
+      <b>Resolução:</b> ${res || "N/A"} m<br>
+      <b>Sensor:</b> ${img?.source || "N/A"}
+    `;
+  } catch (e) {
+    document.getElementById("resultado").innerHTML = "Erro na consulta";
+  }
+}
+</script>
+
+</body>
+</html>
